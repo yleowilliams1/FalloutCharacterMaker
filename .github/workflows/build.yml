@@ -4,89 +4,232 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:  # lets you trigger a build manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
+  # ============================================================
+  # Windows
+  # ============================================================
   build-windows:
     runs-on: windows-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: msys2/setup-msys2@v2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-raylib
-          path-type: inherit  # adds mingw64/bin to the normal Windows PATH
-      - name: Build
-        shell: cmd
-        run: WINDOWS.bat src FalloutCharacterMaker.exe
-      - name: Package
-        shell: cmd
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-raylib
+          path-type: strict
+
+      - name: Verify MSYS2 toolchain
+        shell: msys2 {0}
         run: |
-          mkdir dist
-          copy FalloutCharacterMaker.exe dist\
-          copy CharacterSheet.png dist\
-          copy fallout.ttf dist\
-          xcopy /E /I data dist\data
-          copy C:\msys64\mingw64\bin\libraylib.dll dist\ 2>nul || exit 0
-      - uses: actions/upload-artifact@v4
+          echo "GCC:"
+          which gcc
+          gcc --version
+
+          echo ""
+          echo "Raylib header:"
+          ls -l /mingw64/include/raylib.h
+
+          echo ""
+          echo "Raylib library:"
+          ls -l /mingw64/lib/libraylib.*
+
+      - name: Build
+        shell: msys2 {0}
+        run: |
+          chmod +x WINDOWS.bat 2>/dev/null || true
+          ./WINDOWS.bat src FalloutCharacterMaker.exe
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+
+          Copy-Item FalloutCharacterMaker.exe dist/
+          Copy-Item CharacterSheet.png dist/
+          Copy-Item fallout.ttf dist/
+
+          Copy-Item data dist/data -Recurse
+
+          $dll = "C:\msys64\mingw64\bin\libraylib.dll"
+
+          if (!(Test-Path $dll)) {
+            Write-Error "raylib DLL not found at $dll"
+            exit 1
+          }
+
+          Copy-Item $dll dist/
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: dist/
 
+
+  # ============================================================
+  # macOS
+  # ============================================================
   build-macos:
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Install raylib
-        run: brew install raylib
+        run: |
+          brew update
+          brew install raylib
+
+      - name: Make build script executable
+        run: chmod +x MAC.mac
+
       - name: Build
         run: ./MAC.mac src FalloutCharacterMaker
+
       - name: Package
         run: |
-          mkdir dist
-          cp FalloutCharacterMaker CharacterSheet.png fallout.ttf dist/
+          mkdir -p dist
+
+          cp FalloutCharacterMaker dist/
+          cp CharacterSheet.png dist/
+          cp fallout.ttf dist/
+
           cp -r data dist/
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
         with:
           name: macos-build
           path: dist/
 
+
+  # ============================================================
+  # Linux
+  # ============================================================
   build-linux:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Install raylib
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libraylib-dev
+
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            git \
+            libgl1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libwayland-dev \
+            libxkbcommon-dev
+
+      - name: Build raylib
+        run: |
+          git clone --depth 1 https://github.com/raysan5/raylib.git
+
+          cmake \
+            -S raylib \
+            -B raylib/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON
+
+          cmake \
+            --build raylib/build \
+            --config Release \
+            --parallel
+
+          sudo cmake --install raylib/build
+          sudo ldconfig
+
+      - name: Verify raylib
+        run: |
+          pkg-config --modversion raylib || true
+          ls -l /usr/local/include/raylib.h
+          ls -l /usr/local/lib/libraylib.so*
+
+      - name: Make build script executable
+        run: chmod +x LINUX.sh
+
       - name: Build
         run: ./LINUX.sh src FalloutCharacterMaker
+
       - name: Package
         run: |
-          mkdir dist
-          cp FalloutCharacterMaker CharacterSheet.png fallout.ttf dist/
+          mkdir -p dist
+
+          cp FalloutCharacterMaker dist/
+          cp CharacterSheet.png dist/
+          cp fallout.ttf dist/
+
           cp -r data dist/
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
         with:
           name: linux-build
           path: dist/
 
+
+  # ============================================================
+  # Release
+  # ============================================================
   release:
-    needs: [build-windows, build-macos, build-linux]
+    needs:
+      - build-windows
+      - build-macos
+      - build-linux
+
     runs-on: ubuntu-latest
+
     if: startsWith(github.ref, 'refs/tags/v')
+
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - name: Zip each platform build
+
+      - name: Create platform ZIPs
+        shell: bash
         run: |
+          set -e
+
           cd artifacts
+
           for dir in */; do
             name="${dir%/}"
-            (cd "$name" && zip -r "../${name}.zip" .)
+
+            echo "Creating ${name}.zip"
+
+            (
+              cd "$name"
+              zip -r "../${name}.zip" .
+            )
           done
-      - name: Create release
+
+          echo ""
+          echo "Created:"
+          ls -lh *.zip
+
+      - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*.zip
+
