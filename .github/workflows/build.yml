@@ -48,34 +48,35 @@ jobs:
         run: |
           chmod +x WINDOWS.bat 2>/dev/null || true
           ./WINDOWS.bat src FalloutCharacterMaker.exe
-
       - name: Package
-        shell: msys2 {0}
-        run: |
-          set -e
+  shell: msys2 {0}
+  run: |
+    set -e
 
-          mkdir -p dist
+    mkdir -p dist
 
-          cp FalloutCharacterMaker.exe dist/
-          cp CharacterSheet.png dist/
-          cp fallout.ttf dist/
-          cp -r data dist/
+    cp FalloutCharacterMaker.exe dist/
+    cp CharacterSheet.png dist/
+    cp fallout.ttf dist/
+    cp -r data dist/
 
-          echo "Looking for raylib DLL..."
-          find /mingw64/bin -iname '*raylib*.dll' -print
+    echo "Finding Windows DLL dependencies..."
 
-          RAYLIB_DLL="$(find /mingw64/bin -iname '*raylib*.dll' -print -quit)"
+    ldd FalloutCharacterMaker.exe
 
-          if [ -z "$RAYLIB_DLL" ]; then
-            echo "ERROR: Could not find raylib DLL"
-            exit 1
-          fi
+    echo ""
+    echo "Copying raylib dependencies..."
 
-          echo "Found raylib DLL:"
-          echo "$RAYLIB_DLL"
+    # Copy raylib itself
+    cp /mingw64/bin/libraylib.dll dist/
 
-          cp "$RAYLIB_DLL" dist/
+    # raylib's GLFW dependency
+    cp /mingw64/bin/glfw3.dll dist/
 
+    echo ""
+    echo "Package contents:"
+    find dist -maxdepth 2 -type f -print
+ 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
@@ -103,7 +104,8 @@ jobs:
 
       - name: Build
         run: ./MAC.mac src FalloutCharacterMaker
-
+      - name: Make application executable
+  run: chmod +x FalloutCharacterMaker
       - name: Package
         run: |
           mkdir -p dist
