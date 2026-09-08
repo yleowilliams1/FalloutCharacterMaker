@@ -49,24 +49,31 @@ jobs:
           ./WINDOWS.bat src FalloutCharacterMaker.exe
 
       - name: Package
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          New-Item -ItemType Directory -Force -Path dist
+          set -e
 
-          Copy-Item FalloutCharacterMaker.exe dist/
-          Copy-Item CharacterSheet.png dist/
-          Copy-Item fallout.ttf dist/
+          mkdir -p dist
 
-          Copy-Item data dist/data -Recurse
+          cp FalloutCharacterMaker.exe dist/
+          cp CharacterSheet.png dist/
+          cp fallout.ttf dist/
+          cp -r data dist/
 
-          $dll = "C:\msys64\mingw64\bin\libraylib.dll"
+          echo "Looking for raylib DLL..."
+          find /mingw64/bin -iname '*raylib*.dll' -print
 
-          if (!(Test-Path $dll)) {
-            Write-Error "raylib DLL not found at $dll"
+          RAYLIB_DLL="$(find /mingw64/bin -iname '*raylib*.dll' -print -quit)"
+
+          if [ -z "$RAYLIB_DLL" ]; then
+            echo "ERROR: Could not find raylib DLL"
             exit 1
-          }
+          fi
 
-          Copy-Item $dll dist/
+          echo "Found raylib DLL:"
+          echo "$RAYLIB_DLL"
+
+          cp "$RAYLIB_DLL" dist/
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
@@ -148,7 +155,8 @@ jobs:
             -S raylib \
             -B raylib/build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON
+            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_EXAMPLES=OFF
 
           cmake \
             --build raylib/build \

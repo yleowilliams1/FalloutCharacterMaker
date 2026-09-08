@@ -1,25 +1,55 @@
 #!/bin/bash
 
 # Compile all .c files found in a src directory into one binary (macOS version)
-# Usage: ./cpil.mac [path_to_src] [output_binary]
+# Usage: ./MAC.mac [path_to_src] [output_binary]
 #
-# Requires: Xcode Command Line Tools (clang, aliased as gcc), and raylib
-# installed via Homebrew (`brew install raylib`) or otherwise discoverable
-# by the compiler.
+# Requires:
+#   - Xcode Command Line Tools
+#   - raylib installed via Homebrew
 
 set -euo pipefail
 
 SRC_DIR="${1:-src}"
 OUT_BIN="${2:-app}"
-CC="${CC:-gcc}"
+CC="${CC:-cc}"
 
 if [ ! -d "$SRC_DIR" ]; then
     echo "Error: source directory '$SRC_DIR' not found." >&2
     exit 1
 fi
 
-# Collect all .c files recursively, null-delimited for safety
+# Find Homebrew's installation prefix.
+# This works for both Apple Silicon (/opt/homebrew)
+# and Intel (/usr/local).
+if command -v brew >/dev/null 2>&1; then
+    BREW_PREFIX="$(brew --prefix)"
+else
+    echo "Error: Homebrew not found." >&2
+    exit 1
+fi
+
+RAYLIB_PREFIX="$(brew --prefix raylib)"
+
+echo "Homebrew prefix: $BREW_PREFIX"
+echo "raylib prefix:   $RAYLIB_PREFIX"
+
+# Verify raylib exists where expected.
+if [ ! -f "$RAYLIB_PREFIX/include/raylib.h" ]; then
+    echo "Error: raylib.h not found at:" >&2
+    echo "  $RAYLIB_PREFIX/include/raylib.h" >&2
+    exit 1
+fi
+
+if [ ! -f "$RAYLIB_PREFIX/lib/libraylib.dylib" ] && \
+   [ ! -f "$RAYLIB_PREFIX/lib/libraylib.a" ]; then
+    echo "Error: raylib library not found in:" >&2
+    echo "  $RAYLIB_PREFIX/lib/" >&2
+    exit 1
+fi
+
+# Collect all .c files recursively, null-delimited for safety.
 files=()
+
 while IFS= read -r -d '' file; do
     files+=("$file")
 done < <(find "$SRC_DIR" -type f -name "*.c" -print0)
@@ -34,11 +64,17 @@ printf '  %s\n' "${files[@]}"
 
 echo "Compiling into: $OUT_BIN"
 
-# macOS needs these frameworks linked in addition to raylib/m — raylib
-# uses them for windowing, input, and rendering on macOS.
-"$CC" "${files[@]}" -o "$OUT_BIN" \
-    -lraylib -lm \
-    -framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
+"$CC" "${files[@]}" \
+    -I"$RAYLIB_PREFIX/include" \
+    -L"$RAYLIB_PREFIX/lib" \
+    -o "$OUT_BIN" \
+    -lraylib \
+    -lm \
+    -framework OpenGL \
+    -framework Cocoa \
+    -framework IOKit \
+    -framework CoreVideo
 
 echo "----------------------------------------"
 echo "Build succeeded: $OUT_BIN"
+
