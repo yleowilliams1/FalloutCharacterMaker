@@ -105,7 +105,7 @@ jobs:
       - name: Build
         run: ./MAC.mac src FalloutCharacterMaker
       - name: Make application executable
-  run: chmod +x FalloutCharacterMaker
+        run: chmod +x FalloutCharacterMaker
       - name: Package
         run: |
           mkdir -p dist
