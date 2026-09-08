@@ -5,8 +5,10 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+
 permissions:
   contents: write
+
 jobs:
   # ============================================================
   # Windows
@@ -48,41 +50,41 @@ jobs:
         run: |
           chmod +x WINDOWS.bat 2>/dev/null || true
           ./WINDOWS.bat src FalloutCharacterMaker.exe
+
       - name: Package
-  shell: msys2 {0}
-  run: |
-    set -e
+        shell: msys2 {0}
+        run: |
+          set -e
 
-    mkdir -p dist
+          mkdir -p dist
 
-    cp FalloutCharacterMaker.exe dist/
-    cp CharacterSheet.png dist/
-    cp fallout.ttf dist/
-    cp -r data dist/
+          cp FalloutCharacterMaker.exe dist/
+          cp CharacterSheet.png dist/
+          cp fallout.ttf dist/
+          cp -r data dist/
 
-    echo "Finding Windows DLL dependencies..."
+          echo "Finding Windows DLL dependencies..."
 
-    ldd FalloutCharacterMaker.exe
+          ldd FalloutCharacterMaker.exe
 
-    echo ""
-    echo "Copying raylib dependencies..."
+          echo ""
+          echo "Copying raylib dependencies..."
 
-    # Copy raylib itself
-    cp /mingw64/bin/libraylib.dll dist/
+          # Copy raylib itself
+          cp /mingw64/bin/libraylib.dll dist/
 
-    # raylib's GLFW dependency
-    cp /mingw64/bin/glfw3.dll dist/
+          # raylib's GLFW dependency
+          cp /mingw64/bin/glfw3.dll dist/
 
-    echo ""
-    echo "Package contents:"
-    find dist -maxdepth 2 -type f -print
- 
+          echo ""
+          echo "Package contents:"
+          find dist -maxdepth 2 -type f -print
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-build
           path: dist/
-
 
   # ============================================================
   # macOS
@@ -104,8 +106,10 @@ jobs:
 
       - name: Build
         run: ./MAC.mac src FalloutCharacterMaker
+
       - name: Make application executable
         run: chmod +x FalloutCharacterMaker
+
       - name: Package
         run: |
           mkdir -p dist
@@ -121,7 +125,6 @@ jobs:
         with:
           name: macos-build
           path: dist/
-
 
   # ============================================================
   # Linux
@@ -196,7 +199,6 @@ jobs:
         with:
           name: linux-build
           path: dist/
-
 
   # ============================================================
   # Release
